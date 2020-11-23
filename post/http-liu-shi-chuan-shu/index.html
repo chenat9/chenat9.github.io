@@ -1,22 +1,92 @@
-<?xml version="1.0" encoding="utf-8"?>
-<feed xmlns="http://www.w3.org/2005/Atom">
-    <id>https://chenat9.github.io</id>
-    <title>Fly</title>
-    <updated>2020-11-23T03:06:33.174Z</updated>
-    <generator>https://github.com/jpmonette/feed</generator>
-    <link rel="alternate" href="https://chenat9.github.io"/>
-    <link rel="self" href="https://chenat9.github.io/atom.xml"/>
-    <subtitle>温故而知新</subtitle>
-    <logo>https://chenat9.github.io/images/avatar.png</logo>
-    <icon>https://chenat9.github.io/favicon.ico</icon>
-    <rights>All rights reserved 2020, Fly</rights>
-    <entry>
-        <title type="html"><![CDATA[HTTP 流式传输]]></title>
-        <id>https://chenat9.github.io/post/http-liu-shi-chuan-shu/</id>
-        <link href="https://chenat9.github.io/post/http-liu-shi-chuan-shu/">
-        </link>
-        <updated>2020-11-23T03:04:09.000Z</updated>
-        <content type="html"><![CDATA[<p>工作跟分布式存储相关，遇到这样一个业务场景，将大文件通过 HTTP 协议传输到服务端。无法一次加载到内存中，组装到 Request 的 body 中。针对这样的问题，应该怎么解决呢？最简单的思路就是将大文件分成小文件上传，HTTP 流式传输就为我们提供了相应的解决方案。</p>
+
+<!DOCTYPE html>
+<html>
+  <head>
+    
+<meta charset="utf-8" >
+
+<title>HTTP 流式传输 | Fly</title>
+<meta name="description" content="温故而知新">
+
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/3.7.0/animate.min.css">
+
+<link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+<link rel="shortcut icon" href="https://chenat9.github.io/favicon.ico?v=1606100781878">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+<link rel="stylesheet" href="https://chenat9.github.io/styles/main.css">
+
+
+
+<script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+<script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+
+
+
+  </head>
+  <body>
+    <div id="app" class="main">
+      <div class="site-header-container">
+  <div class="site-header">
+    <div class="left">
+      <a href="https://chenat9.github.io">
+        <img class="avatar" src="https://chenat9.github.io/images/avatar.png?v=1606100781878" alt="" width="32px" height="32px">
+      </a>
+      <a href="https://chenat9.github.io">
+        <h1 class="site-title">Fly</h1>
+      </a>
+    </div>
+    <div class="right">
+      <transition name="fade">
+        <i class="icon" :class="{ 'icon-close-outline': menuVisible, 'icon-menu-outline': !menuVisible }" @click="menuVisible = !menuVisible"></i>
+      </transition>
+    </div>
+  </div>
+</div>
+
+<transition name="fade">
+  <div class="menu-container" style="display: none;" v-show="menuVisible">
+    <div class="menu-list">
+      
+        
+          <a href="/" class="menu purple-link">
+            首页
+          </a>
+        
+      
+        
+          <a href="/archives" class="menu purple-link">
+            归档
+          </a>
+        
+      
+        
+          <a href="/tags" class="menu purple-link">
+            标签
+          </a>
+        
+      
+        
+          <a href="/post/about" class="menu purple-link">
+            关于
+          </a>
+        
+      
+    </div>
+  </div>
+</transition>
+
+
+      <div class="content-container">
+        <div class="post-detail">
+          
+          <h2 class="post-title">HTTP 流式传输</h2>
+          <div class="post-info post-detail-info">
+            <span><i class="icon-calendar-outline"></i> 2020-11-23</span>
+            
+          </div>
+          <div class="post-content">
+            <p>工作跟分布式存储相关，遇到这样一个业务场景，将大文件通过 HTTP 协议传输到服务端。无法一次加载到内存中，组装到 Request 的 body 中。针对这样的问题，应该怎么解决呢？最简单的思路就是将大文件分成小文件上传，HTTP 流式传输就为我们提供了相应的解决方案。</p>
 <p>先来看几个知识点：</p>
 <h4 id="keepalive模式">KeepAlive模式</h4>
 <p>大学的知识学完，我对 HTTP 的认知只记住了少数几个关键词：HTTP 是无状态无连接的。</p>
@@ -105,6 +175,54 @@ Client编码</p>
 <p>Content-Length 和 Transfer-Encoding，两种方式为消息内容的长度判断提供了解决方案。</p>
 <p>设置Content-Length的方式，由 Client 端持续将数据通过 HTTP 传输到 Server。</p>
 <p>chunk方式，Client 端将数据分片发包到 Server。</p>
-]]></content>
-    </entry>
-</feed>
+
+          </div>
+        </div>
+
+        
+      </div>
+
+      
+
+      <div class="site-footer">
+  <div class="slogan">温故而知新</div>
+  <div class="social-container">
+    
+      
+        <a href="https://github.com/chenat9" target="_blank">
+          <i class="fab fa-github"></i>
+        </a>
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+  Powered by <a href="https://chenat9.github.io" target="_blank">CHEN</a> | <a class="rss" href="https://chenat9.github.io/atom.xml" target="_blank">RSS</a>
+</div>
+
+
+    </div>
+    <script type="application/javascript">
+
+hljs.initHighlightingOnLoad()
+
+var app = new Vue({
+  el: '#app',
+  data: {
+    menuVisible: false,
+  },
+})
+
+</script>
+
+
+
+
+  </body>
+</html>
