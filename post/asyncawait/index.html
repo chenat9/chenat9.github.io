@@ -2,23 +2,18 @@
   <head>
     <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>关于 | Fly</title>
+<title>Async/Await | Fly</title>
 <link rel="shortcut icon" href="https://chenat9.github.io/favicon.ico?v=1606147446717">
 <link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
 <link rel="stylesheet" href="https://chenat9.github.io/styles/main.css">
-<link rel="alternate" type="application/atom+xml" title="关于 | Fly - Atom Feed" href="https://chenat9.github.io/atom.xml">
+<link rel="alternate" type="application/atom+xml" title="Async/Await | Fly - Atom Feed" href="https://chenat9.github.io/atom.xml">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
 
 
 
-    <meta name="description" content="
-欢迎来到我的小站呀，很高兴遇见你！🤝
-
-🏠 关于本站
-👨‍💻 博主是谁
-⛹ 兴趣爱好
-📬 联系我呀
-..." />
+    <meta name="description" content="在这篇文章，我们将探索Rust 中的多任务机制和异步/等待特性。我们详细的剖析异步/等待机制如何工作，包括 Future 的设计，状态机转换和 pinning。我们增加了基础的支持在内核中。通过创建异步键盘任务和基本的执行器。
+多任务
+大多..." />
     <meta name="keywords" content="" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
     <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
@@ -81,37 +76,47 @@
         <div class="post-detail">
           <article class="post">
             <h2 class="post-title">
-              关于
+              Async/Await
             </h2>
             <div class="post-info">
               <span>
-                2019-01-25
+                2020-11-24
               </span>
               <span>
-                1 min read
+                3 min read
               </span>
               
             </div>
             
             <div class="post-content-wrapper">
               <div class="post-content">
-                <blockquote>
-<p>欢迎来到我的小站呀，很高兴遇见你！🤝</p>
-</blockquote>
-<h2 id="关于本站">🏠 关于本站</h2>
-<h2 id="博主是谁">👨‍💻 博主是谁</h2>
-<h2 id="兴趣爱好">⛹ 兴趣爱好</h2>
-<h2 id="联系我呀">📬 联系我呀</h2>
+                <p>在这篇文章，我们将探索Rust 中的多任务机制和异步/等待特性。我们详细的剖析异步/等待机制如何工作，包括 Future 的设计，状态机转换和 pinning。我们增加了基础的支持在内核中。通过创建异步键盘任务和基本的执行器。</p>
+<h3 id="多任务">多任务</h3>
+<p>大多数操作系统的基本特性之一就是支持多任务，这是一种允许多任务并行执行的能力。比如，你也许打开了一个程序来看这片文章，比如文字编辑器或者 Terminal 窗口，甚至你可能有一个单独的浏览器窗口开着。多重多样的后台任务在运行，为了你可以管理桌面窗口，检查更新或者索引文件。<br>
+任务看起来是并行的，但 CPU 只允许一个任务在执行。为了创建同时运行的错觉，操作系统迅速的切换在活动的任务中。<br>
+单核 CPU 同时只能运行一个任务，但多核 CPU 可以真正同时运行多个任务。比如8core CPU 可以同时运行8个任务。我们会解释如何装载多核 CPU。<br>
+有两种形式的多任务系统：合作式多任务需要任务主动放弃 CPU 的控制权，以便其他任务可以进行。抢占式多任务使用操作系统提供的能力去切换线程，操作系统可以任意的强制停止他们。在接下来，我们将解释两种不通形式。</p>
+<h3 id="抢占式多任务">抢占式多任务</h3>
+<p>抢占式多任务的核心关键是由操作系统来控制何时切换任务。正因如此，每个 Interrupt 都会重新获得控制权。这也使得无论何时系统中有新的输入可用时得以切换任务。比如，鼠标移动或者网络包到达。操作系统可以确定确切的时间一个任务可以运行通过配置一个硬件时间，发送一个信号在此以后。</p>
+<p>在第一行，CPU 在执行 A程序中的 A1任务。所有的任务被暂停。在第二行中，硬件中断到达 CPU。CPu 立刻停止 A1执行然后跳到了中断处理器在 IDT 中定义的。通过 handler，操作系统现在重新获得 CPU 控制权。然后允许切换到 B1</p>
+<p>状态保存<br>
+因为程序可能被任意中智，也许正在一些计算中。为了稍后回复他，操作系统必须备份全部状态，包括调用站合 CPU 寄存器的之。这就叫上下文切换。<br>
+调用栈可能特别庞大， 操作系统典型的为每个任务设置了分离的调用站，避免每次任务切换备份。这样有自己的调用栈的任务北郊错线程。通过使用分离调用站，只有寄存器内容需要被保存。这个方式最小化了性能损耗。1s 100ci</p>
+<h3 id="合作式多任务">合作式多任务</h3>
+<p>不同于在任意时间点强制停止任务，合作式多任务系统允许每个任务主动放弃 CPU 的控制权。这</p>
 
               </div>
               <div class="toc-container">
                 <ul class="markdownIt-TOC">
 <li>
 <ul>
-<li><a href="#%E5%85%B3%E4%BA%8E%E6%9C%AC%E7%AB%99">🏠 关于本站</a></li>
-<li><a href="#%E5%8D%9A%E4%B8%BB%E6%98%AF%E8%B0%81">👨‍💻 博主是谁</a></li>
-<li><a href="#%E5%85%B4%E8%B6%A3%E7%88%B1%E5%A5%BD">⛹ 兴趣爱好</a></li>
-<li><a href="#%E8%81%94%E7%B3%BB%E6%88%91%E5%91%80">📬 联系我呀</a></li>
+<li>
+<ul>
+<li><a href="#%E5%A4%9A%E4%BB%BB%E5%8A%A1">多任务</a></li>
+<li><a href="#%E6%8A%A2%E5%8D%A0%E5%BC%8F%E5%A4%9A%E4%BB%BB%E5%8A%A1">抢占式多任务</a></li>
+<li><a href="#%E5%90%88%E4%BD%9C%E5%BC%8F%E5%A4%9A%E4%BB%BB%E5%8A%A1">合作式多任务</a></li>
+</ul>
+</li>
 </ul>
 </li>
 </ul>
