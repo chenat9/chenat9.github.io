@@ -1,0 +1,376 @@
+<html>
+  <head>
+    <meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ristretto -- 高性能Go Cache | Fly</title>
+<link rel="shortcut icon" href="https://chenat9.github.io/favicon.ico?v=1639930339910">
+<link href="https://cdn.jsdelivr.net/npm/remixicon@2.3.0/fonts/remixicon.css" rel="stylesheet">
+<link rel="stylesheet" href="https://chenat9.github.io/styles/main.css">
+<link rel="alternate" type="application/atom+xml" title="Ristretto -- 高性能Go Cache | Fly - Atom Feed" href="https://chenat9.github.io/atom.xml">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Droid+Serif:400,700">
+
+
+
+    <meta name="description" content="前言
+故事开始于我们的Github项目Dgraph 中需要一个内存受限、支持并发的 Go 缓存库。我们四处寻找但没有找到一个很好的解决方案。随后我们尝试使用基于分片的HashMap，通过每个分片独立的淘汰策略来释放内存，这引发了一些内存问题..." />
+    <meta name="keywords" content="" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.10.0/katex.min.css">
+    <script src="https://cdn.bootcss.com/highlight.js/9.12.0/highlight.min.js"></script>
+  </head>
+  <body>
+    <div class="main">
+      <div class="main-content">
+        <div class="site-header">
+  <a href="https://chenat9.github.io">
+  <img class="avatar" src="https://chenat9.github.io/images/avatar.png?v=1639930339910" alt="">
+  </a>
+  <h1 class="site-title">
+    Fly
+  </h1>
+  <p class="site-description">
+    温故而知新
+  </p>
+  <div class="menu-container">
+    
+      
+        <a href="/" class="menu">
+          首页
+        </a>
+      
+    
+      
+        <a href="/archives" class="menu">
+          归档
+        </a>
+      
+    
+      
+        <a href="/tags" class="menu">
+          标签
+        </a>
+      
+    
+      
+        <a href="/post/about" class="menu">
+          关于
+        </a>
+      
+    
+  </div>
+  <div class="social-container">
+    
+      
+    
+      
+    
+      
+    
+      
+    
+      
+    
+  </div>
+</div>
+
+        <div class="post-detail">
+          <article class="post">
+            <h2 class="post-title">
+              Ristretto -- 高性能Go Cache
+            </h2>
+            <div class="post-info">
+              <span>
+                2021-12-20
+              </span>
+              <span>
+                17 min read
+              </span>
+              
+            </div>
+            
+            <div class="post-content-wrapper">
+              <div class="post-content">
+                <h3 id="前言">前言</h3>
+<p>故事开始于我们的Github项目<a href="https://github.com/dgraph-io/dgraph">Dgraph 中</a>需要一个内存受限、支持并发的 Go 缓存库。我们四处寻找但没有找到一个很好的解决方案。随后我们尝试使用基于分片的HashMap，通过每个分片独立的淘汰策略来释放内存，这引发了一些内存问题。然后我们启用了 Groupcache 的<a href="https://github.com/golang/groupcache/blob/master/lru/lru.go">LRU</a>，它使用互斥锁来保证线程安全。使用一年后，我们注意到这个缓存库的锁冲突情况比较严重。有一次，我们提了Commit从代码中去掉这个缓存，结果令查询性能提高了5-10倍。也就是说**，我们的缓存反而拖累了我们！**</p>
+<p>我们得出结论，在Go的生态中，支持并发操作的缓存不完整的，需要被尽快补充完整。三月，我们写了关于<a href="https://blog.dgraph.io/post/caching-in-go/">Go 缓存状态的文章</a>，提到了数据库和系统需要一个智能的、内存受限的缓存，该缓存可以扩展到 Go 程序所处的多线程环境。我们给这个缓存库提出了如下的要求：</p>
+<ol>
+<li>支持并发操作</li>
+<li>高缓存命中率</li>
+<li>内存受限（限制为配置文件中指定的最大内存使用量）</li>
+<li>随着CPU核心数和Goroutine数的增加，具有很好的扩展性</li>
+<li>在非随机Key访问分布下（例如 Zipf）下，具有很好的扩展性</li>
+</ol>
+<p>发布<a href="https://blog.dgraph.io/post/caching-in-go/">博文后</a>，我们组建了一个团队来解决其中提到的挑战，并创建了一个值得与非 Go 缓存实现进行比较的 Go 缓存。值得一提的是<a href="https://github.com/ben-manes/caffeine">Caffeine</a>，它是一个基于 Java 8 的高性能、近乎最优的缓存库。许多基于 Java 的数据库都在使用它，例如 Cassandra、HBase 和 Neo4j。关于Caffeine的设计文章可以查看这里。</p>
+<h3 id="ristretto更好的浓缩咖啡">Ristretto：更好的浓缩咖啡</h3>
+<p>从那以后，我们阅读文献、广泛测试了各种Cache实现，并讨论了在编写缓存库时需要考虑的方方面面。今天，我们自豪地宣布，它已经准备好被Go社区更广泛的使用和测试。</p>
+<p>在我们开始解释<a href="https://github.com/dgraph-io/ristretto">Ristretto</a>的设计之前，这里有一个代码片段，展示了它的用法：</p>
+<pre><code class="language-go">func main() {
+	cache, err := ristretto.NewCache(&amp;ristretto.Config{
+		NumCounters: 1e7,     // Num keys to track frequency of (10M).
+		MaxCost:     1 &lt;&lt; 30, // Maximum cost of cache (1GB).
+		BufferItems: 64,      // Number of keys per Get buffer.
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	cache.Set(&quot;key&quot;, &quot;value&quot;, 1) // set a value
+	// wait for value to pass through buffers
+	time.Sleep(10 * time.Millisecond)
+
+	value, found := cache.Get(&quot;key&quot;)
+	if !found {
+		panic(&quot;missing value&quot;)
+	}
+	fmt.Println(value)
+	cache.Del(&quot;key&quot;)
+}
+</code></pre>
+<h4 id="指导原则">指导原则</h4>
+<p><a href="https://github.com/dgraph-io/ristretto">Ristretto</a>建立在三个指导原则之上：</p>
+<ol>
+<li>快速访问</li>
+<li>高并发、抗锁冲突</li>
+<li>内存受限</li>
+</ol>
+<p>在这篇博文中，我们将讨论这三个原则的具体含义，以及我们如何在 Ristretto 中达到这些原则。</p>
+<h3 id="快速访问">快速访问</h3>
+<p>尽管我们喜欢 Go 及其对功能的固执己见，但一些 Go 设计决策导致我们无法榨干我们想要实现的所有性能。尤其是是 Go 的并发模型。由于对CSP的关注，大多数其他形式的原子操作都被忽略了。这使得实现一些对缓存很有用的无锁结构是一件很困难的事情。例如，Go <a href="https://groups.google.com/d/msg/golang-nuts/M9kF6Tdh2Vo/3tLSFYYOGgAJ">不</a>提供线程本地存储（Thread-Local）。</p>
+<p>从本质上讲，Cache就是简单的HashMap，同时包含一些关于数据准入和淘汰的规则。如果HashMap性能表现不佳，那么整个Cache都会受到影响。与 Java 不同，Go 没有ConcurrentHashMap这种东西（大意是分段加锁，降低锁冲突）。相反，Go 中的线程安全是通过显式的获取互斥锁来实现的。</p>
+<p>我们尝试了多种实现，发现<code>sync.Map</code>在频繁的Read操作负载下表现良好，但在Write操作负载时表现不佳。考虑到没有Thread-Local 存储， <strong>我们发现分片且带有互斥锁的 Go Map 具有最佳的整体性能。</strong> 我们选择使用 256 个分片以确保即使在 64 核服务器上也可以获得很好的表现。</p>
+<p>要想使用这种基于分片的方式，我们还需要找到一种方法快速计算Hash应该进入哪个分片。这样的需求，以及担心Long Key（比较大的Key值）会消耗过多内存，我们决定对Key使用<code>uint64</code>代替，而不是存储整个Key。基本原理是在入口处对Key执行一次Hash计算，这个Hash值允许在后面的多处使用，避免更多计算。</p>
+<p><strong>为了快速生成Hash，我们从 Go Runtime借用了<a href="https://github.com/dgraph-io/ristretto/blob/master/z/rtutil.go#L42-L44">runtime.memhash</a>。</strong> 该函数使用汇编代码快速生成哈希。它在进程启动时会初始化一个随机数发生器，这意味着相同的Key可能在下一次进程启动时生成不同的Hash值。不过这对于非持久性缓存来说是没问题的。在我们的<a href="https://github.com/dgraph-io/ristretto/blob/master/z/rtutil_test.go#L11-L44">实验中</a>，我们发现它可以在 10ns 内散列 64 字节的密钥。</p>
+<pre><code>BenchmarkMemHash-32 200000000	 8.88 ns/op
+BenchmarkFarm-32    100000000	 17.9 ns/op
+BenchmarkSip-32      30000000	 41.1 ns/op
+BenchmarkFnv-32      20000000	 70.6 ns/op
+</code></pre>
+<p>我们不仅将这个Hash用作存储的Key，而且还用于确定Key应该进入的分片。<em>这带来了Hash冲突的可能，在接下来的文章中我们会讲解如何解决它。</em></p>
+<h3 id="支持并发和抗争用">支持并发和抗争用</h3>
+<p>实现高命中率需要管理一些元数据，这些元数据用来表示Cache中当前存在哪些数据，以及Cache中应该存在哪些数据。支持多Goroutine的Cache中，平衡缓存的性能和可扩展性变得非常困难。幸运的是，有<a href="https://dgraph.io/blog/refs/bp_wrapper.pdf">一篇</a>名为<em>BP-Wrapper</em>的论文写了一个系统框架，使任何替换算法几乎无锁争用。该论文描述了两种缓解争用的方法：<em>预取</em>和 <em>批处理</em> 。我们只使用批处理。</p>
+<p>批处理的工作方式和你想象的非常相似。 它<strong>不是为每次的元数据变化获取互斥锁，而是先等待RingBuffer填满，再去获取互斥锁处理元数据的变化。</strong> 正如论文中所述，这大大降低了锁冲突，而且开销很小。</p>
+<p>我们在所有的Get操作和更新到缓存中的Set操作上使用了这种思想。</p>
+<h4 id="get请求">Get请求</h4>
+<p>当然，所有Get请求都会立即得到响应（不需要等待缓冲区填满）。我们只是用来统计Get操作的次数，因此必须追踪对Key的访问。在 LRU 缓存中，通常将Key放置在链表的头部。在基于 LFU 的缓存中，我们需要增加Key的命中计数器。这两个操作都需要对Cache的全局结构进行访问，而且必须是线程安全的。<a href="https://dgraph.io/blog/refs/bp_wrapper.pdf">BP-Wrapper</a>建议使用批处理来处理Key的命中计数器，但问题是我们如何在不获取另一个锁的情况下实现这个批处理过程。</p>
+<p>这听起来像是 Go Channel的完美应用，确实如此。不幸的是，通道的吞吐量性能太低阻碍了我们的使用。 <strong>我们设计使用<code>sync.Pool</code>实现来条带化的，但有损<a href="https://github.com/dgraph-io/ristretto/blob/master/ring.go#L99-L104">环形缓冲区</a></strong> ，该缓冲区具有出色的性能且数据丢失很少。</p>
+<p>存储在Pool中的任何数据可能会随时自动删除，而没有任何通知。这个操作导致了一级有损行为*。* Pool 中的每一项实际上都是一批Key。当批次填满时，它会被推送到一个Channel。Channel大小故意保持较小，以避免消耗太多 CPU 周期来处理它。如果通道已满，则丢弃该批次。  <em>这引入了二级有损行为。</em> 一个 Goroutine 从Channel中获取并处理这批Key，更新它们的命中计数器。</p>
+<pre><code class="language-go">AddToLossyBuffer(key):
+  stripe := b.pool.Get().(*ringStripe)
+  stripe.Push(key)
+  b.pool.Put(stripe)
+
+Once buffer fills up, push to channel:
+  select {
+  case p.itemsCh &lt;- keys:
+      p.stats.Add(keepGets, keys[0], uint64(len(keys)))
+      return true
+  default:
+      p.stats.Add(dropGets, keys[0], uint64(len(keys)))
+      return false
+  }
+
+p.itemCh processing:
+  func (p *tinyLFU) Push(keys []uint64) {
+    for _, key := range keys {
+      p.Increment(key)
+    }
+  }
+</code></pre>
+<p>使用<code>sync.Pool</code>优于其他任何东西（slice、striped mutexes等）, 由于是Thread-Local存储的内部使用，所以会有这么大的性能优势。<em>这些东西不能作为公共 API 提供给 Go 用户。</em></p>
+<h4 id="set操作">Set操作</h4>
+<p>Set 缓冲区的要求与 Get 略有不同。在 Gets 中，我们只缓冲Key，只有在缓冲区填满后才处理它们。在 Sets 中，我们希望尽快处理这些Key。 <strong>因此，我们使用一个通道来捕获 Sets，如果通道已满，则丢弃它们上以避免争用。</strong> 几个后台 Goroutines 从Channel中取回并且处理Set操作。</p>
+<p>这种方法与 Gets 一样，旨在优化抗争用。但是，有一些注意事项，如下所述。</p>
+<pre><code class="language-go">select {
+case c.setBuf &lt;- &amp;item{key: hash, val: val, cost: cost}:
+    return true
+default:
+    // drop the set and avoid blocking
+    c.stats.Add(dropSets, hash, 1)
+    return false
+}
+</code></pre>
+<h4 id="注意事项">注意事项</h4>
+<p><a href="https://github.com/dgraph-io/ristretto">Ristretto</a>中的Set操作排队进入Buffer，控制权返回给调用者，然后Buffer被应用到缓存中。这有两个副作用：</p>
+<ol>
+<li>一次Set<strong>操作不保证一定会为apply。</strong> 可能立即放弃以避免争用，也可以稍后被策略拒绝。</li>
+<li>即使Apply了 Set操作，调用返回给用户后也可能需要几毫秒的时间。在数据库术语中，它是一种<em>最终一致性</em> 模型。</li>
+</ol>
+<p>但是，如果缓存中已经存在该Key，则 Set 将立即更新Key。这是为了避免缓存的Key保存过时的值。</p>
+<h4 id="降低锁冲突">降低锁冲突</h4>
+<p><strong>Ristretto 针对降低锁冲突进行了优化。</strong> 这在高并发负载下表现非常好，我们将在下面的吞吐量Benchmark中看到。但是，它会丢失一些元数据以换取更好的吞吐量性能。</p>
+<p>有趣的是，由于Hash访问分布的性质，信息丢失并不会影响我们的命中率性能。如果我们确实丢失了元数据，它通常会均匀丢失，而密钥访问分布仍然不均匀。因此，我们仍然实现了高命中率，并且命中率下降很小，如下图所示。</p>
+<figure data-type="image" tabindex="1"><img src="https://dgraph.io/blog/images/rt-hit-degrade.svg?sanitize=true" alt="Ristretto 命中率下降" loading="lazy"></figure>
+<h3 id="内存受限">内存受限</h3>
+<h4 id="key的成本">Key的成本</h4>
+<p>不可能存在无限大的缓存*。* 缓存必须有大小限制。许多缓存库将缓存大小视为元素的数量。我们发现这种方法是不成熟的 。当然，它适用于值大小相同的负载。但是，大多数情况下负载值的大小并不确定。一个值占用的空间可能是Bytes、KB或者MB。将他们视为消耗相同的内存成本是不合理的。</p>
+<p><strong>在<a href="https://github.com/dgraph-io/ristretto">Ristretto 中</a>，我们为每个键值附加一个成本的概念。</strong> 用户可以在调用 Set 时指定成本是多少。我们根据缓存的MaxCost配置项计算此成本。当Cache满负荷运行时，一个占用内存大的数据可能会取代许多占用内存少的数据。这是一种很好的机制，因为它适用于不同的工作负载，包括每个Key-Value成本为 1 的简单方法。</p>
+<h4 id="tinylfu-准入策略">TinyLFU 准入策略</h4>
+<blockquote>
+<p>“应该让什么样的数据进入Cache？”</p>
+</blockquote>
+<p>这个答案应该有准入策略给出。显而易见的是，我们想要实现的目标是，新数据的进入比旧数据更 <em>“有价值”</em> 。然而，如何跟踪与 <em>“价值”</em> 问题相关的这些数据信息所需的开销（延迟和内存），这将成为一个挑战。</p>
+<p>虽然准入策略可以提高Cache命中率，但大多数 Go 缓存库根本没有提供准入策略。许多 LRU 淘汰策略的实现假设最新的Key是最有价值的。</p>
+<p>此外，大多数 Go 缓存库使用纯 LRU 或 LRU 的变种作为其淘汰策略。尽管 LRU算法的情况不错，但某些工作负载更适合 LFU 淘汰策略。我们使用各种各样的追踪手段在基准测试中证实了这一点。</p>
+<p>对于我们的准入策略，我们阅读了**<a href="https://dgraph.io/blog/refs/TinyLFU%20-%20A%20Highly%20Efficient%20Cache%20Admission%20Policy.pdf">TinyLFU 的</a>**这篇引人入胜的新论文 ：一种高效的缓存准入策略。TinyLFU 提供了三个方法：</p>
+<ul>
+<li>Incremenmt</li>
+<li>Estimate(key uint64) int（简称ɛ）</li>
+<li>Reset</li>
+</ul>
+<p>该<a href="https://dgraph.io/blog/refs/TinyLFU%20-%20A%20Highly%20Efficient%20Cache%20Admission%20Policy.pdf">论文</a>做了很好的解释，但 TinyLFU 是一种与淘汰策略无关的策略，旨在以很少的内存开销提高命中率。主要思想是 <strong>仅在新数据的估计值高于被淘汰数据的估计值时才让其进入。</strong> 我们 使用Count-Min Sketch在<a href="https://github.com/dgraph-io/ristretto">Ristretto 中</a>实现了 TinyLFU 。它使用 4 位计数器来估算项目的访问频率 (ɛ)。每个键的这种小成本使我们能够跟踪全局键空间的更大样本，这比使用普通键到频率映射可能实现的要大得多。<a href="https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch"></a></p>
+<p>TinyLFU 还通过<code>Reset</code>函数维护Key访问的新近度。在 N 个Key递增后，计数器减半。因此，一段时间未看到的Key会将其计数器重置为零；为最近看到的Key铺平了道路。</p>
+<h4 id="simpled-lfu-淘汰策略">Simpled LFU 淘汰策略</h4>
+<p>当缓存达到容量时，每个传入的Key都可能替换缓存中存在的一个或多个键。不仅如此， <strong>传入key的ɛ应该高于被驱逐的key的ɛ。</strong> 为了找到具有低 ɛ 的键，我们使用Go Map迭代器提供的自然 <a href="https://blog.golang.org/go-maps-in-action">随机性</a>来选择Key样本并循环它们以找到具有最低 ɛ 的键。</p>
+<p>然后我们将这个Kye的 ɛ 与传入的Key进行比较。如果传入的密钥具有更高的 ɛ，则该Key将被淘汰（ 淘汰<em>策略</em> ）。否则，传入的Key将被拒绝（ <em>准入</em>策略 ）。重复此机制，直到传入Key的成本可以放入缓存中。因此，单个传入Key可能会取代多个Key。<em>请注意，传入Key的成本不会影响选择淘汰Key的因素。</em></p>
+<p><strong>使用这种方法，对于各种工作负载，命中率在准确 LFU 策略的 1% 以内。</strong> 这意味着我们在同一个小包中获得了准入策略、保守的内存使用和更低的争用的好处。</p>
+<pre><code class="language-go">// Snippet from the Admission and Eviction Algorithm
+incHits := p.admit.Estimate(key)
+for ; room &lt; 0; room = p.evict.roomLeft(cost) {
+    sample = p.evict.fillSample(sample)
+    minKey, minHits, minId := uint64(0), int64(math.MaxInt64), 0
+    for i, pair := range sample {
+        if hits := p.admit.Estimate(pair.key); hits &lt; minHits {
+            minKey, minHits, minId = pair.key, hits, i
+        }
+    }
+    if incHits &lt; minHits {
+        p.stats.Add(rejectSets, key, 1)
+        return victims, false
+    }
+    p.evict.del(minKey)
+    sample[minId] = sample[len(sample)-1]
+    sample = sample[:len(sample)-1]
+    victims = append(victims, minKey)
+}
+</code></pre>
+<h4 id="守门员">守门员</h4>
+<p>在我们在 TinyLFU 中放置新Key之前，<a href="https://github.com/dgraph-io/ristretto">Ristretto</a>使用布隆过滤器首先检查该密钥之前是否被看到过。只有当密钥已经存在于布隆过滤器中时，它才会被插入到 TinyLFU 中。这是为了避免使用不 多次出现的长尾键<em>污染</em>TinyLFU。</p>
+<p>在计算一个键的ɛ时，如果该项目包含在布隆过滤器中，则其频率估计为来自 TinyLFU 的估计值加一。在<code>Reset</code>TinyLFU期间 ，布隆过滤器也被清除。</p>
+<h3 id="指标">指标</h3>
+<p>这是一个可选的配置项，但对于了解缓存的行为方式很重要。我们希望确保与缓存相关的跟踪指标不仅是可能的，而且这样做的开销足够低，可以打开和保持。</p>
+<p>除了命中和未命中之外，Ristretto 还跟踪诸如Key及其Cost被添加、更新和淘汰、Set操作被丢弃或拒绝以及被丢弃或保留等指标。所有这些数字都有助于了解各种工作负载上的缓存行为，并为进一步优化铺平道路。</p>
+<p>我们最初为这些使用原子计数器。但是，开销很大。我们将原因定位到<a href="https://dzone.com/articles/false-sharing">False Sharing</a>。在一个多核系统只不过，其中不同的原子计数器（每个 8 字节）位于同一Cache line（通常为 64 字节）中。对这些计数器之一进行的任何更新都会导致其他计数器被标记为 <em>invalid</em> 。这会强制为所有其他持有该缓存的内核重新加载缓存，从而在缓存行上产生写入争用。</p>
+<p><strong>为了实现可扩展性，我们确保每个原子计数器完全占用一个完整的Cache line。</strong> 因此，每个内核都在不同的缓存行上工作。Ristretto 通过为每个Metrics分配 256 个 uint64 来使用它，在每个活动 uint64 之间留下 9 个未使用的 uint64。为了避免额外的计算，Key散列被重用以确定要增加哪个 uint64。</p>
+<pre><code class="language-go">Add:
+	valp := p.all[t]
+	// Avoid false sharing by padding at least 64 bytes of space between two
+	// atomic counters which would be incremented.
+	idx := (hash % 25) * 10
+	atomic.AddUint64(valp[idx], delta)
+
+Read:
+	valp := p.all[t]
+	var total uint64
+	for i := range valp {
+		total += atomic.LoadUint64(valp[i])
+	}
+	return total
+</code></pre>
+<p>读取metric时，读取所有的uint64s并求和得到最新的数字。<strong>使用这种方法，指标跟踪只会为缓存性能增加大约 10% 的开销。</strong></p>
+
+              </div>
+              <div class="toc-container">
+                <ul class="markdownIt-TOC">
+<li>
+<ul>
+<li>
+<ul>
+<li><a href="#%E5%89%8D%E8%A8%80">前言</a></li>
+<li><a href="#ristretto%E6%9B%B4%E5%A5%BD%E7%9A%84%E6%B5%93%E7%BC%A9%E5%92%96%E5%95%A1">Ristretto：更好的浓缩咖啡</a>
+<ul>
+<li><a href="#%E6%8C%87%E5%AF%BC%E5%8E%9F%E5%88%99">指导原则</a></li>
+</ul>
+</li>
+<li><a href="#%E5%BF%AB%E9%80%9F%E8%AE%BF%E9%97%AE">快速访问</a></li>
+<li><a href="#%E6%94%AF%E6%8C%81%E5%B9%B6%E5%8F%91%E5%92%8C%E6%8A%97%E4%BA%89%E7%94%A8">支持并发和抗争用</a>
+<ul>
+<li><a href="#get%E8%AF%B7%E6%B1%82">Get请求</a></li>
+<li><a href="#set%E6%93%8D%E4%BD%9C">Set操作</a></li>
+<li><a href="#%E6%B3%A8%E6%84%8F%E4%BA%8B%E9%A1%B9">注意事项</a></li>
+<li><a href="#%E9%99%8D%E4%BD%8E%E9%94%81%E5%86%B2%E7%AA%81">降低锁冲突</a></li>
+</ul>
+</li>
+<li><a href="#%E5%86%85%E5%AD%98%E5%8F%97%E9%99%90">内存受限</a>
+<ul>
+<li><a href="#key%E7%9A%84%E6%88%90%E6%9C%AC">Key的成本</a></li>
+<li><a href="#tinylfu-%E5%87%86%E5%85%A5%E7%AD%96%E7%95%A5">TinyLFU 准入策略</a></li>
+<li><a href="#simpled-lfu-%E6%B7%98%E6%B1%B0%E7%AD%96%E7%95%A5">Simpled LFU 淘汰策略</a></li>
+<li><a href="#%E5%AE%88%E9%97%A8%E5%91%98">守门员</a></li>
+</ul>
+</li>
+<li><a href="#%E6%8C%87%E6%A0%87">指标</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+              </div>
+            </div>
+          </article>
+        </div>
+
+        
+          <div class="next-post">
+            <div class="next">下一篇</div>
+            <a href="https://chenat9.github.io/post/golang-pipeline/">
+              <h3 class="post-title">
+                Golang Pipeline
+              </h3>
+            </a>
+          </div>
+        
+
+        
+
+        <div class="site-footer">
+  Powered by <a href="https://chenat9.github.io" target="_blank">CHEN</a>
+  <a class="rss" href="https://chenat9.github.io/atom.xml" target="_blank">
+    <i class="ri-rss-line"></i> RSS
+  </a>
+</div>
+
+      </div>
+    </div>
+
+    <script>
+      hljs.initHighlightingOnLoad()
+
+      let mainNavLinks = document.querySelectorAll(".markdownIt-TOC a");
+
+      // This should probably be throttled.
+      // Especially because it triggers during smooth scrolling.
+      // https://lodash.com/docs/4.17.10#throttle
+      // You could do like...
+      // window.addEventListener("scroll", () => {
+      //    _.throttle(doThatStuff, 100);
+      // });
+      // Only not doing it here to keep this Pen dependency-free.
+
+      window.addEventListener("scroll", event => {
+        let fromTop = window.scrollY;
+
+        mainNavLinks.forEach((link, index) => {
+          let section = document.getElementById(decodeURI(link.hash).substring(1));
+          let nextSection = null
+          if (mainNavLinks[index + 1]) {
+            nextSection = document.getElementById(decodeURI(mainNavLinks[index + 1].hash).substring(1));
+          }
+          if (section.offsetTop <= fromTop) {
+            if (nextSection) {
+              if (nextSection.offsetTop > fromTop) {
+                link.classList.add("current");
+              } else {
+                link.classList.remove("current");    
+              }
+            } else {
+              link.classList.add("current");
+            }
+          } else {
+            link.classList.remove("current");
+          }
+        });
+      });
+
+    </script>
+  </body>
+</html>
