@@ -2,14 +2,32 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://chenat9.github.io</id>
     <title>Fly</title>
-    <updated>2021-12-19T16:12:27.071Z</updated>
+    <updated>2022-08-17T06:26:24.925Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://chenat9.github.io"/>
     <link rel="self" href="https://chenat9.github.io/atom.xml"/>
     <subtitle>温故而知新</subtitle>
     <logo>https://chenat9.github.io/images/avatar.png</logo>
     <icon>https://chenat9.github.io/favicon.ico</icon>
-    <rights>All rights reserved 2021, Fly</rights>
+    <rights>All rights reserved 2022, Fly</rights>
+    <entry>
+        <title type="html"><![CDATA[第一封]]></title>
+        <id>https://chenat9.github.io/post/di-yi-feng/</id>
+        <link href="https://chenat9.github.io/post/di-yi-feng/">
+        </link>
+        <updated>2022-08-17T06:26:12.000Z</updated>
+        <content type="html"><![CDATA[<p>我一直在想，自己究竟为什么喜欢你。<br>
+也许是那天在清冷的公园里，第一次牵你手的时候，心跳得热烈。你总是问我是不是谈了太多恋爱就不会再心动了，我不知道以后我会给出什么样的答案，但是和你在一起的时候，心动过好多次。<br>
+喜欢你是一件很开心的事，想见到你时的冲动，可以连工作都不做了；很冷的天还是会想和你在那条马路上散步；把上班时间提前一个小时就为了和你在地铁上牵手几分钟。很多时候，我都在很认真很认真的喜欢着你，像一个第一次谈恋爱的小男生，不懂节制，热烈奔放的喜欢。<br>
+情不知所起，一往而深。<br>
+喜欢的太深就会有负作用，争吵和矛盾其实大多数都是源自于我，对感情的纯粹度要求太高，没有得到及时反馈就情绪波动。感情里的我一向不够理智，也曾去寻找各种情感理论来指导我应该怎样喜欢你。他们告诉我，依赖型人格会有这样那样的毛病，缺爱，患得患失，情绪失控，需要被满足。我也想改掉这一切的问题和缺陷，心理学说要降低对你的依附，情感大师说要不以物喜不以己悲，佛祖说放下贪痴嗔念欲。我说，去你们妈的，我就是放不下一点点对付鑫怡的喜欢。<br>
+你总是说我对你提了太多要求，其实很多时候，我只是想我和你的恋爱能够留下很多只有我跟你独有的记忆。单纯的想法，却没有很好的表达给你，我应该跟你道歉，但我还是想做只有我和你做过的事。真真切切的爱过一遍，就应该留下一点记忆和联系。不然如果因为意外结束这段感情，连哭着删朋友圈的机会都没有，那我多可悲，没有存在过的证据。<br>
+长恨人心不如水，等闲平地起波澜。<br>
+尽管岁数不小，但是恋爱心智还不够成熟。我认为这不是坏事，也不想听到你指责我幼稚，毕竟就像是第一次喜欢一个人，把自己的心全部交给你的那种笨拙和真诚，与我而言，这很值得，并且很酷。<br>
+我们应该就会在这座2000万人口的城市里一直生活下去，在那个房子里，种上你喜欢的花，再养一只猫。每一个清晨，我会拉开碎花窗帘轻轻叫醒你，一起刷牙吃早餐然后拥抱去上班。这样平淡的日子我设想过无数次，最重要的是，你也在。跟你恋爱，然后成长，被你信任理解和依赖，这应该也是人世间最浪漫的事情之一，也是我们能够共度余生的基石。<br>
+多给我一点回应，接下来在恋爱的这条路上，就让我牵着你的手走到最后吧。</p>
+]]></content>
+    </entry>
     <entry>
         <title type="html"><![CDATA[Ristretto -- 高性能Go Cache]]></title>
         <id>https://chenat9.github.io/post/ristretto-gao-xing-neng-go-cache/</id>
